@@ -1,0 +1,39 @@
+{{- if .Values.ingress.enabled }}
+{{- $host := required "ingress.host is required (e.g. wiki.example.com)" .Values.ingress.host }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- include "wikijs.labels" . | nindent 4 }}
+  annotations:
+    {{- with .Values.ingress.clusterIssuer }}
+    cert-manager.io/cluster-issuer: {{ . }}
+    {{- end }}
+    # Asset uploads go through this Ingress; the controller's 1m default is too
+    # small for anything but text.
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .Values.ingress.clusterIssuer }}
+  tls:
+    - secretName: {{ .Values.ingress.tlsSecretName | default (printf "%s-tls" (.Values.ingress.host | replace "." "-")) }}
+      hosts: [{{ $host | quote }}]
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Values.wiki.fullnameOverride }}
+                port:
+                  number: 80
+{{- end }}

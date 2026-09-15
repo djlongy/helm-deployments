@@ -1,0 +1,15 @@
+apiVersion: v2
+name: wikijs
+description: Wiki.js 2 with a CloudNativePG database, optional git content seeding and optional OIDC sign-in
+type: application
+version: 0.1.0
+appVersion: "2.5.314"
+home: https://js.wiki
+sources:
+  - https://github.com/requarks/wiki
+dependencies:
+  # The upstream chart. 3.0.0 is the first release that does NOT depend on the
+  # Bitnami postgresql subchart every 2.2.x release pinned.
+  - name: wiki
+    version: "3.0.0"
+    repository: https://charts.js.wiki

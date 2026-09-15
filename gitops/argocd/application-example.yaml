@@ -1,0 +1,25 @@
+# A single Application, for when you would rather list apps explicitly than let
+# the ApplicationSet discover them. Same chart, same values file.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: wikijs
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/OWNER/helm-deployments.git
+    targetRevision: main
+    path: charts/wikijs
+    helm:
+      valueFiles:
+        - /environments/example/wikijs.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: wikijs
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

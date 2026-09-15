@@ -1,0 +1,16 @@
+{{- if or .Values.seed.enabled .Values.sso.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-scripts
+  labels:
+    {{- include "wikijs.labels" . | nindent 4 }}
+  annotations:
+    # The jobs that consume this are Helm hooks, so the ConfigMap has to exist
+    # by the time the hook runs and must outlive the hook's own deletion.
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+data:
+{{ (.Files.Glob "files/*.js").AsConfig | indent 2 }}
+{{- end }}

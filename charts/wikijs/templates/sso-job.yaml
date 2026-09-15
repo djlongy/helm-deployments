@@ -1,0 +1,44 @@
+{{- if .Values.sso.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-sso
+  labels:
+    {{- include "wikijs.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    # After the seed job: both log in as the local administrator, and running
+    # them concurrently would have each racing the other's session.
+    "helm.sh/hook-weight": "20"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "wikijs.labels" . | nindent 8 }}
+        app.kubernetes.io/component: sso
+    spec:
+      {{- include "wikijs.hookPodSpec" . | nindent 6 }}
+      containers:
+        - name: sso
+          {{- include "wikijs.hookContainerCommon" . | nindent 10 }}
+          command: ["node", "/scripts/sso.js"]
+          env:
+            - name: WIKI_URL
+              value: {{ include "wikijs.serviceUrl" . | quote }}
+            - name: SITE_URL
+              value: {{ include "wikijs.siteUrl" . | quote }}
+            - name: OIDC_ISSUER
+              value: {{ required "sso.issuer is required when sso.enabled" .Values.sso.issuer | quote }}
+            - name: OIDC_STRATEGY_KEY
+              value: {{ .Values.sso.strategyKey | quote }}
+            - name: OIDC_GROUPS_CLAIM
+              value: {{ .Values.sso.groupsClaim | quote }}
+            - name: OIDC_DISPLAY_NAME
+              value: {{ .Values.sso.displayName | quote }}
+            - name: OIDC_GROUP_MAP
+              value: {{ .Values.sso.groupMap | toJson | quote }}
+            - name: OIDC_RETIRED_GROUPS
+              value: {{ .Values.sso.retiredGroups | toJson | quote }}
+{{- end }}

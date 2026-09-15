@@ -1,0 +1,42 @@
+{{- if .Values.seed.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-seed
+  labels:
+    {{- include "wikijs.labels" . | nindent 4 }}
+  annotations:
+    # A Helm hook rather than a plain manifest, so it runs after the Deployment
+    # is up and is re-run on upgrade. Helm hooks are honoured by ArgoCD (mapped
+    # to sync phases) and by Flux (which drives Helm itself), so one mechanism
+    # covers all three ways of consuming this chart.
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "wikijs.labels" . | nindent 8 }}
+        app.kubernetes.io/component: seed
+    spec:
+      {{- include "wikijs.hookPodSpec" . | nindent 6 }}
+      containers:
+        - name: seed
+          {{- include "wikijs.hookContainerCommon" . | nindent 10 }}
+          command: ["node", "/scripts/bootstrap.js"]
+          env:
+            - name: WIKI_URL
+              value: {{ include "wikijs.serviceUrl" . | quote }}
+            - name: SITE_URL
+              value: {{ include "wikijs.siteUrl" . | quote }}
+            - name: REPO_URL
+              value: {{ required "seed.repoUrl is required when seed.enabled" .Values.seed.repoUrl | quote }}
+            - name: REPO_BRANCH
+              value: {{ .Values.seed.branch | quote }}
+            - name: SYNC_MODE
+              value: {{ .Values.seed.mode | quote }}
+            - name: GIT_AUTH_TYPE
+              value: {{ .Values.seed.authType | quote }}
+{{- end }}

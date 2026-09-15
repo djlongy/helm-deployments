@@ -1,0 +1,9 @@
+# Downloaded dependency archives are rebuilt from Chart.lock.
+# Chart.lock itself IS committed: ArgoCD's repo-server and Flux's
+# source-controller run `helm dependency build`, which requires it.
+charts/*/charts/
+*.tgz
+
+# Never commit an agent harness to a public host.
+.agent/
+.agents/

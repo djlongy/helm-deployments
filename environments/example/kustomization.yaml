@@ -1,0 +1,23 @@
+# Flux entrypoint for this environment. Only needed if you use Flux — the Helm
+# CLI and ArgoCD read wikijs.yaml directly and ignore this file.
+#
+# It lives HERE, beside the values file, rather than under gitops/flux/, because
+# Flux's kustomize-controller refuses to load a file outside the kustomization
+# root and exposes no load-restrictor override. A generator reaching up with
+# ../../ fails with "is not in or below". Keeping the generator next to its
+# input is the only arrangement that works, and it keeps ONE values file.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - wikijs.helmrelease.yaml
+
+configMapGenerator:
+  - name: wikijs-values
+    files:
+      - values.yaml=wikijs.yaml
+
+# The hash suffix is what makes Flux redeploy when the values change: the
+# HelmRelease's ConfigMap reference is rewritten, which is a spec change.
+generatorOptions:
+  disableNameSuffixHash: false

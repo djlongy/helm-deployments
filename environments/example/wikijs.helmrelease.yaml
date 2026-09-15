@@ -1,0 +1,29 @@
+# Flux only. See kustomization.yaml in this directory.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: wikijs
+  namespace: wikijs
+spec:
+  interval: 10m
+  chart:
+    spec:
+      # The chart is a directory in this same repository, so Flux resolves its
+      # dependencies itself — no chart needs publishing anywhere.
+      chart: charts/wikijs
+      sourceRef:
+        kind: GitRepository
+        name: helm-deployments
+        namespace: flux-system
+      reconcileStrategy: Revision
+  valuesFrom:
+    - kind: ConfigMap
+      name: wikijs-values
+      valuesKey: values.yaml
+  install:
+    createNamespace: true
+    remediation:
+      retries: 2
+  upgrade:
+    remediation:
+      retries: 2

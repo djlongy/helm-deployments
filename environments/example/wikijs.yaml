@@ -1,0 +1,51 @@
+# Everything this environment needs to differ from charts/wikijs/values.yaml.
+#
+# This file is the ENTIRE adaptation surface. Copy the directory, change the
+# values, deploy — no tracked file under charts/ is edited.
+
+ingress:
+  host: wiki.example.com
+  className: nginx
+  clusterIssuer: letsencrypt-prod
+  annotations: {}
+    # external-dns.alpha.kubernetes.io/hostname: wiki.example.com
+    # external-dns.alpha.kubernetes.io/target: "203.0.113.10"
+
+postgres:
+  instances: 1
+  storage:
+    size: 10Gi
+    storageClass: ""          # "" = the cluster's default StorageClass
+
+# Scheduling for the database and the hook jobs. The Wiki.js pod takes
+# wiki.tolerations, because Helm cannot compute values for a subchart.
+tolerations: []
+nodeSelector: {}
+
+# ── Optional: seed the wiki from a git repository of markdown ───────────────
+seed:
+  enabled: false
+  repoUrl: git@github.com:acme/wiki-content.git
+  branch: main
+  mode: pull                  # pull | sync | push
+  authType: ssh               # ssh | basic
+
+# ── Optional: OIDC sign-in ─────────────────────────────────────────────────
+sso:
+  enabled: false
+  issuer: https://idp.example.com/realms/main
+  displayName: Company SSO
+  strategyKey: sso
+  groupMap: {}
+    # wiki-readers: viewer
+    # wiki-authors: editor
+    # wiki-owners:  admin
+
+# ── Where the hook jobs read credentials ───────────────────────────────────
+credentials:
+  mode: externalSecret        # externalSecret | existing
+  externalSecret:
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: my-secret-store
+    remoteKey: apps/wikijs/runtime

@@ -1,0 +1,172 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Wiki.js 2
+#
+# Required: ingress.host. Everything else has a working default.
+# ─────────────────────────────────────────────────────────────────────────────
+
+ingress:
+  enabled: true
+  host: ""                     # REQUIRED, e.g. wiki.example.com
+  className: nginx
+  clusterIssuer: ""            # cert-manager ClusterIssuer; "" disables TLS
+  tlsSecretName: ""            # defaults to <host>-tls
+  annotations: {}              # e.g. external-dns.alpha.kubernetes.io/target
+
+# Scheduling for the pods THIS chart owns: the database and the hook jobs.
+# The Wiki.js pod itself comes from the upstream subchart, so its scheduling is
+# `wiki.nodeSelector` / `wiki.tolerations` further down. Helm cannot compute
+# subchart values, which is why the two are separate rather than one setting.
+nodeSelector: {}
+tolerations: []
+
+# ── Database ────────────────────────────────────────────────────────────────
+# A CloudNativePG Cluster. Set enabled:false to bring your own PostgreSQL, and
+# then set wiki.externalPostgresql.* to point at it.
+postgres:
+  enabled: true
+  instances: 1
+  storage:
+    size: 10Gi
+    storageClass: ""           # "" = the cluster's default StorageClass
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 1Gi}
+
+# ── Content seeding ─────────────────────────────────────────────────────────
+# Runs the setup wizard, points Wiki.js at a git repository of markdown, and
+# imports every page, so the wiki is serving content on first boot.
+seed:
+  enabled: false
+  repoUrl: ""                  # git@github.com:org/wiki-content.git, or https://…
+  branch: main
+  # pull  = read the repo, never write to it
+  # sync  = bidirectional, wiki edits are committed back
+  # push  = write only
+  mode: pull
+  # ssh (deploy key) or basic (username + token)
+  authType: ssh
+
+# ── Single sign-on ──────────────────────────────────────────────────────────
+sso:
+  enabled: false
+  displayName: Single Sign-On
+  # Issuer base URL. The authorize/token/userinfo/logout endpoints are derived
+  # from it as <issuer>/protocol/openid-connect/<endpoint>.
+  issuer: ""
+  # Path segment of the redirect URI, which is
+  #   https://<ingress.host>/login/<strategyKey>/callback
+  # Register exactly that on the identity provider's client.
+  strategyKey: sso
+  groupsClaim: groups
+  # Identity-provider group name -> viewer | editor | admin.
+  # Matched EXACTLY against the groups claim.
+  groupMap: {}
+  #   my-wiki-readers: viewer
+  #   my-wiki-authors: editor
+  #   my-wiki-owners:  admin
+  #
+  # Wiki.js groups to delete before mapping. mapGroups checks the claim against
+  # EVERY Wiki.js group, so a group named after something every account carries
+  # would grant its permissions to everyone.
+  retiredGroups: []
+
+# ── Credentials ─────────────────────────────────────────────────────────────
+# Where the hook jobs get the admin account, the git key and the OIDC client.
+#
+#   externalSecret  pull them from a secret manager via External Secrets
+#   existing        a Secret you created yourself
+#
+# Keys in the resulting Secret: admin_email, admin_password,
+# git_deploy_key or git_username+git_password, oidc_client_id,
+# oidc_client_secret. Only the ones your enabled features need.
+credentials:
+  mode: externalSecret
+  existingSecret: ""
+  externalSecret:
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: ""                 # REQUIRED when mode is externalSecret
+    refreshInterval: 1h
+    # Remote key holding the fields, and the property name for each.
+    remoteKey: ""              # REQUIRED, e.g. apps/wikijs/runtime
+    properties:
+      admin_email: admin_email
+      admin_password: admin_password
+      git_deploy_key: git_deploy_key
+      oidc_client_id: oidc_client_id
+      oidc_client_secret: oidc_client_secret
+
+# ── Upstream chart ──────────────────────────────────────────────────────────
+# Passed straight through to the `wiki` subchart. Anything its values.yaml
+# accepts works here.
+wiki:
+  fullnameOverride: wikijs
+
+  image:
+    repository: requarks/wiki
+    tag: "2.5.314"
+
+  # The chart's own PostgreSQL StatefulSet stays off; the database above,
+  # or one you supply, serves instead.
+  postgresql:
+    enabled: false
+
+  externalPostgresql:
+    # Matches the Cluster this chart creates. Change both if you bring your own.
+    host: wikijs-pg-rw
+    port: 5432
+    database: wiki
+    username: wiki
+    existingSecret: wikijs-pg-app
+    existingSecretKey: password
+    ssl: true
+    # `ca` IS DELIBERATELY UNSET — see requarks/wiki#7942. Setting it makes the
+    # chart emit DB_SSL_CA as a file PATH, while server/core/db.js reads that
+    # variable as raw base64 certificate BODY and rebuilds a PEM from it by
+    # 64-character chunking. Given a path it builds a broken certificate and
+    # dies with UNABLE_TO_GET_ISSUER_CERT_LOCALLY in a CrashLoopBackOff.
+    #
+    # Left unset, db.js takes its other branch: DB_SSL=true with an empty
+    # DB_SSL_CA yields rejectUnauthorized with no explicit CA, so Node verifies
+    # against its default trust store PLUS NODE_EXTRA_CA_CERTS — which is where
+    # the database CA is mounted below. Verification stays ON, and the mounted
+    # secret follows the CA's own rotation.
+
+  # Node trusts the database CA in addition to the public roots.
+  nodeExtraCaCerts: /etc/ssl/db-ca/ca.crt
+
+  ingress:
+    enabled: false             # this chart renders the Ingress instead
+
+  startupProbe:
+    initialDelaySeconds: 15
+    periodSeconds: 5
+    failureThreshold: 60
+    httpGet: {path: /healthz, port: http}
+
+  resources:
+    requests: {cpu: 200m, memory: 512Mi}
+    limits: {memory: 2Gi}
+
+  # Mounts the database CA so NODE_EXTRA_CA_CERTS above can find it.
+  volumes:
+    - name: db-ca
+      secret:
+        secretName: wikijs-pg-ca
+        items: [{key: ca.crt, path: ca.crt}]
+  volumeMounts:
+    - name: db-ca
+      mountPath: /etc/ssl/db-ca
+      readOnly: true
+
+  nodeSelector: {}
+  tolerations: []
+
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]

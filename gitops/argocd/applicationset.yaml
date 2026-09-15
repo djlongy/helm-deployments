@@ -1,0 +1,48 @@
+# One ApplicationSet covers every app in every environment.
+#
+# The git files generator walks environments/<env>/<app>.yaml, so adding a file
+# adds an Application. Nothing here is edited to onboard an app.
+#
+# The chart path is derived from the file NAME and the values file is the very
+# same file scripts/deploy.sh passes to `helm upgrade` — one values file, three
+# ways of applying it.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: helm-deployments
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: &repo https://github.com/OWNER/helm-deployments.git
+        revision: &rev main
+        files:
+          - path: "environments/*/*.yaml"
+  template:
+    metadata:
+      # <env>-<app>, e.g. prod-wikijs
+      name: '{{ index .path.segments 1 }}-{{ trimSuffix ".yaml" .path.filename }}'
+    spec:
+      project: default
+      source:
+        repoURL: *repo
+        targetRevision: *rev
+        path: 'charts/{{ trimSuffix ".yaml" .path.filename }}'
+        helm:
+          # A leading "/" is relative to the REPOSITORY root, which is what lets
+          # the values live outside the chart directory without a ../../ climb.
+          valueFiles:
+            - '/{{ .path.path }}/{{ .path.filename }}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ trimSuffix ".yaml" .path.filename }}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          # The charts declare dependencies; ArgoCD must resolve them.
+          - ApplyOutOfSyncOnly=true
