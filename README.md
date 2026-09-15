@@ -49,15 +49,17 @@ adds an Application. Values live outside the chart directory, which works
 because a `valueFiles` entry beginning with `/` is resolved from the repository
 root.
 
-**Flux** — apply the `GitRepository` and one `Kustomization` per environment,
-as in [`gitops/flux/README.md`](gitops/flux/README.md).
+**Flux** — apply [`gitops/flux/source.yaml`](gitops/flux/source.yaml), then add
+one `HelmRelease` per app under `gitops/flux/releases/`. Its `valuesFiles` paths
+are relative to the source, which for a `GitRepository` is the repository root,
+so Flux reads the same files. See [`gitops/flux/README.md`](gitops/flux/README.md)
+for the two settings that are not optional.
 
-Flux needs one thing the other two do not: a `kustomization.yaml` and a
-`*.helmrelease.yaml` inside `environments/<env>/`, because Flux reads values
-from a ConfigMap rather than from a git path, and its kustomize-controller
-refuses to load a file outside the kustomization root — with no override. So
-the generator has to sit beside its input. Those two files are inert for the
-Helm CLI and for ArgoCD; delete them if you never use Flux.
+Both of those work only because the charts wrap upstream as a **dependency**
+rather than referencing an upstream chart directly. Point Flux at a
+`HelmRepository` and the "source" becomes the upstream tarball, putting your
+values file out of reach; ArgoCD would likewise need a second source. Wrapping
+keeps one chart path and one values path for all three modes.
 
 ## Conventions
 
@@ -75,9 +77,13 @@ wrong place.
 upstream chart as a dependency; local templates add only what it lacks. Pin the
 version — that and the image tag in `values.yaml` are what a bot bumps.
 
-**Ordering is Helm hooks.** A `post-install` hook runs under `helm install`, is
-mapped to a sync phase by ArgoCD, and is executed by Flux, which drives Helm
-itself. Sync-waves and `dependsOn` each work in only one of the three.
+**Ordering inside one release is a Helm hook.** A `post-install` hook runs under
+`helm install`, is mapped to a sync phase by ArgoCD, and is executed by Flux,
+which drives Helm itself.
+
+Ordering *across* releases is not — use ArgoCD sync-waves or Flux `dependsOn`,
+whichever you run. The two have genuinely different primitives (a number versus
+an edge list) and trying to unify them produces something neither tool reads.
 
 **Secrets are never in git.** Charts take either an External Secrets reference
 or the name of a Secret you made yourself. The secret backend is a value, not an

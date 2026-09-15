@@ -1,49 +1,64 @@
 # Flux
 
-Two objects bootstrap everything: a `GitRepository` for this repo, and one
-`Kustomization` per environment pointing at `environments/<env>/`.
+Two objects, then one file per app.
+
+```bash
+kubectl apply -f gitops/flux/source.yaml
+```
+
+That creates a `GitRepository` for this repo and a `Kustomization` over
+`gitops/flux/releases/`. There is deliberately no `kustomization.yaml` in that
+directory — kustomize-controller generates one over whatever manifests it
+finds, so adding `releases/<app>.yaml` deploys the app.
+
+## How the values are shared
+
+The `HelmRelease` takes the chart from this repository rather than from a chart
+registry:
 
 ```yaml
-apiVersion: source.toolkit.fluxcd.io/v1
-kind: GitRepository
-metadata:
-  name: helm-deployments
-  namespace: flux-system
+chart:
+  spec:
+    chart: ./charts/wikijs
+    sourceRef: {kind: GitRepository, name: helm-deployments}
+    valuesFiles:
+      - ./charts/wikijs/values.yaml
+      - ./environments/example/wikijs.yaml
+```
+
+`valuesFiles` paths are relative to the **source**, which for a `GitRepository`
+is the repository root — so Flux reads exactly the files the Helm CLI and
+ArgoCD read. No ConfigMap, no `configMapGenerator`, no second copy.
+
+This only works because the chart source is a `GitRepository`. Point a
+`HelmRelease` at a `HelmRepository` instead and the "source" becomes the
+upstream chart tarball, your values file is unreachable, and you are pushed into
+`valuesFrom` with a ConfigMap — which is why the charts here wrap upstream as a
+dependency rather than referencing it directly.
+
+## Two settings that are not optional
+
+`reconcileStrategy: Revision` — the default, `ChartVersion`, only builds a new
+artefact when the version in `Chart.yaml` changes. Leave it at the default and a
+commit that edits only a values file never reconciles.
+
+The chart's own `values.yaml` is listed explicitly in `valuesFiles`. It is the
+base of the merge, and listing it is correct regardless of whether Flux would
+otherwise include it.
+
+## Ordering across apps
+
+Flux has no sync-wave. Where one release must exist before another — an
+operator before a CR that uses it — use `dependsOn` on the dependent release:
+
+```yaml
 spec:
-  interval: 5m
-  url: https://github.com/OWNER/helm-deployments.git
-  ref:
-    branch: main
----
-apiVersion: kustomize.config.k8s.io/v1
-kind: Kustomization
-metadata:
-  name: example
-  namespace: flux-system
-spec:
-  interval: 10m
-  prune: true
-  sourceRef:
-    kind: GitRepository
-    name: helm-deployments
-  path: ./environments/example
+  dependsOn:
+    - name: cloudnative-pg
+      namespace: flux-system
 ```
 
-## Why the Flux glue sits in `environments/`, not here
+Ordering *within* one release is a Helm hook and needs nothing here.
 
-Flux's kustomize-controller refuses to load a file outside the kustomization
-root, and unlike the `kustomize` CLI it has no `--load-restrictor` override. A
-`configMapGenerator` under `gitops/flux/<env>/` reaching back to
-`../../../environments/<env>/wikijs.yaml` fails with:
-
-```
-security; file '.../environments/example/wikijs.yaml' is not in or
-below '.../gitops/flux/example'
-```
-
-So the generator has to sit next to its input. The alternative — a second copy
-of the values for Flux — is worse: the whole point is that all three consumption
-modes read the same file.
-
-`kustomization.yaml` and `*.helmrelease.yaml` are inert for the other two modes.
-Delete them if you never use Flux.
+For an operator chart, set `install.crds: CreateReplace` and
+`upgrade.crds: CreateReplace`.

@@ -1,0 +1,39 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: wikijs
+  namespace: flux-system
+spec:
+  interval: 10m
+  releaseName: wikijs
+  targetNamespace: wikijs
+  install:
+    createNamespace: true
+    remediation:
+      retries: 2
+  upgrade:
+    remediation:
+      retries: 2
+  chart:
+    spec:
+      # A directory in this repository, so source-controller runs
+      # `helm dependency build` itself and no chart is published anywhere.
+      chart: ./charts/wikijs
+      sourceRef:
+        kind: GitRepository
+        name: helm-deployments
+        namespace: flux-system
+
+      # REQUIRED. The default, ChartVersion, only produces a new artefact when
+      # the version in Chart.yaml moves — so a commit that changes only a values
+      # file would never reconcile.
+      reconcileStrategy: Revision
+
+      # Paths are relative to the SOURCE, which for a GitRepository is the
+      # repository root — the same files scripts/deploy.sh and ArgoCD read.
+      # The chart's own values.yaml is listed explicitly: it is the base of the
+      # merge and listing it is correct whether or not Flux would add it.
+      valuesFiles:
+        - ./charts/wikijs/values.yaml
+        - ./environments/example/wikijs.yaml
+      ignoreMissingValuesFiles: true

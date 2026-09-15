@@ -1,0 +1,28 @@
+# One GitRepository serves every app: the charts AND the values both live here.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: helm-deployments
+  namespace: flux-system
+spec:
+  interval: 5m
+  url: https://github.com/OWNER/helm-deployments.git
+  ref:
+    branch: main
+---
+# Applies everything under gitops/flux/releases. There is no kustomization.yaml
+# in that directory on purpose: kustomize-controller generates one over every
+# manifest it finds, so dropping in a HelmRelease deploys it.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: helm-deployments
+  namespace: flux-system
+spec:
+  interval: 10m
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: helm-deployments
+  path: ./gitops/flux/releases

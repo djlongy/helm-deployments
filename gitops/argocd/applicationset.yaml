@@ -35,6 +35,8 @@ spec:
           # the values live outside the chart directory without a ../../ climb.
           valueFiles:
             - '/{{ .path.path }}/{{ .path.filename }}'
+          # An app with no environment override still deploys.
+          ignoreMissingValueFiles: true
       destination:
         server: https://kubernetes.default.svc
         namespace: '{{ trimSuffix ".yaml" .path.filename }}'
@@ -44,5 +46,6 @@ spec:
           selfHeal: true
         syncOptions:
           - CreateNamespace=true
-          # The charts declare dependencies; ArgoCD must resolve them.
-          - ApplyOutOfSyncOnly=true
+          # Operator charts ship CRDs large enough to blow the client-side-apply
+          # annotation size limit.
+          - ServerSideApply=true
