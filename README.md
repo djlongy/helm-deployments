@@ -27,6 +27,11 @@ reader, who is an editor and who is an administrator, with nothing to configure
 afterwards — including the one permission Wiki.js will not let you grant through
 its own admin UI.
 
+Already have a wiki, or want to do it by hand? See
+[docs/oidc-admin-without-scripts.md](docs/oidc-admin-without-scripts.md): a
+directory group becomes a Wiki.js administrator using only Keycloak client roles
+and the Wiki.js admin UI, with nothing to run.
+
 ## Layout
 
 ```
