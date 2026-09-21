@@ -21,6 +21,12 @@ $EDITOR environments/prod/wikijs.yaml      # set ingress.host, storage class, �
 
 That is the whole workflow. `--dry-run` works as an extra argument.
 
+For single sign-on with group mapping, start from `environments/example-sso`
+instead. It deploys a wiki where the identity provider's groups decide who is a
+reader, who is an editor and who is an administrator, with nothing to configure
+afterwards — including the one permission Wiki.js will not let you grant through
+its own admin UI.
+
 ## Layout
 
 ```
@@ -36,7 +42,7 @@ docs/adding-an-app.md         how to add the next app
 
 | App | What you get |
 |---|---|
-| [`wikijs`](charts/wikijs/) | Wiki.js 2, a CloudNativePG database over verified TLS, optional content seeding from a git repository, optional OIDC sign-in with group mapping |
+| [`wikijs`](charts/wikijs/) | Wiki.js 2, a CloudNativePG database over verified TLS, the setup wizard completed for you, optional content seeding from a git repository, optional OIDC sign-in with group mapping |
 
 ## Adopting a GitOps controller later
 
@@ -76,6 +82,13 @@ wrong place.
 **Charts wrap upstream, they do not fork it.** `Chart.yaml` declares the
 upstream chart as a dependency; local templates add only what it lacks. Pin the
 version — that and the image tag in `values.yaml` are what a bot bumps.
+
+**The install finishes what the product leaves half-done.** Wiki.js serves a
+setup screen and no API until its wizard has run, so the chart runs it as the
+first hook and the later ones depend on the administrator it creates. The same
+reasoning covers group permissions: `manage:system` is the permission that makes
+a Wiki.js group an administrator, and its checkbox is hardcoded disabled in the
+admin UI, so a deployment is the only place it can be assigned.
 
 **Ordering inside one release is a Helm hook.** A `post-install` hook runs under
 `helm install`, is mapped to a sync phase by ArgoCD, and is executed by Flux,

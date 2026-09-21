@@ -28,3 +28,12 @@ http://{{ .Values.wiki.fullnameOverride }}.{{ .Release.Namespace }}.svc.cluster.
 {{- define "wikijs.siteUrl" -}}
 {{ if .Values.ingress.clusterIssuer }}https{{ else }}http{{ end }}://{{ .Values.ingress.host }}
 {{- end -}}
+
+{{/*
+True when any hook job is rendered, and therefore when the scripts ConfigMap
+and the credentials Secret have to exist. Empty string is Helm's false, so this
+is used with `if include`, not `if and`.
+*/}}
+{{- define "wikijs.hooksEnabled" -}}
+{{- if or .Values.setup.enabled .Values.seed.enabled .Values.sso.enabled -}}true{{- end -}}
+{{- end -}}

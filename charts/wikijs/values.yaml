@@ -32,9 +32,20 @@ postgres:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {memory: 1Gi}
 
+# ── Setup wizard ───────────────────────────────────────────────────────────
+# Completes Wiki.js's own setup wizard and creates the local administrator from
+# the admin_email / admin_password credentials, before any other hook runs.
+#
+# Leave it on. Wiki.js serves a setup screen and no GraphQL API until the wizard
+# has run, so both the seeding and the SSO hooks depend on this having happened:
+# they sign in as that administrator. Turn it off only to click through the
+# wizard by hand, and then do so before enabling either of them.
+setup:
+  enabled: true
+
 # ── Content seeding ─────────────────────────────────────────────────────────
-# Runs the setup wizard, points Wiki.js at a git repository of markdown, and
-# imports every page, so the wiki is serving content on first boot.
+# Points Wiki.js at a git repository of markdown and imports every page, so the
+# wiki is serving content on first boot. Runs after the setup hook above.
 seed:
   enabled: false
   repoUrl: ""                  # git@github.com:org/wiki-content.git, or https://…
@@ -59,7 +70,24 @@ sso:
   strategyKey: sso
   groupsClaim: groups
   # Identity-provider group name -> viewer | editor | admin.
-  # Matched EXACTLY against the groups claim.
+  #
+  # Matched EXACTLY against the groups claim, because that is what Wiki.js does.
+  #
+  # The three tier names are this chart's shorthand, NOT Wiki.js concepts.
+  # Wiki.js knows only group names, a fixed list of permission strings and page
+  # rules; the tier expands to one of these, in files/sso.js:
+  #
+  #   viewer  read:pages, read:assets, read:comments
+  #   editor  the above plus write:pages, manage:pages, write:assets,
+  #           write:comments, read:source, read:history
+  #   admin   manage:system -- the single permission the built-in Administrators
+  #           group holds, and the one that makes a group a full administrator
+  #
+  # admin is deliberately manage:system alone: Wiki.js short-circuits every
+  # other permission and every page rule for anyone who holds it, so adding
+  # more would change nothing. It is also the one permission that cannot be
+  # granted through the admin UI at all -- the checkbox is hardcoded disabled --
+  # which is why assigning it belongs in the deployment.
   groupMap: {}
   #   my-wiki-readers: viewer
   #   my-wiki-authors: editor
@@ -89,10 +117,17 @@ credentials:
     refreshInterval: 1h
     # Remote key holding the fields, and the property name for each.
     remoteKey: ""              # REQUIRED, e.g. apps/wikijs/runtime
+    # Maps each field this chart reads onto the property name holding it in the
+    # secret manager. Only the fields the ENABLED features need are requested,
+    # because External Secrets fails the whole ExternalSecret if any one
+    # reference cannot be resolved -- so asking for a git key on an SSO-only
+    # deployment would take out the credentials that deployment does use.
     properties:
       admin_email: admin_email
       admin_password: admin_password
       git_deploy_key: git_deploy_key
+      git_username: git_username
+      git_password: git_password
       oidc_client_id: oidc_client_id
       oidc_client_secret: oidc_client_secret
 

@@ -1,0 +1,32 @@
+{{- if .Values.setup.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-setup
+  labels:
+    {{- include "wikijs.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    # Weight 0: ahead of the seed job (10) and the SSO job (20). Both of those
+    # sign in as the local administrator, and this is the hook that creates it.
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "wikijs.labels" . | nindent 8 }}
+        app.kubernetes.io/component: setup
+    spec:
+      {{- include "wikijs.hookPodSpec" . | nindent 6 }}
+      containers:
+        - name: setup
+          {{- include "wikijs.hookContainerCommon" . | nindent 10 }}
+          command: ["node", "/scripts/setup.js"]
+          env:
+            - name: WIKI_URL
+              value: {{ include "wikijs.serviceUrl" . | quote }}
+            - name: SITE_URL
+              value: {{ include "wikijs.siteUrl" . | quote }}
+{{- end }}

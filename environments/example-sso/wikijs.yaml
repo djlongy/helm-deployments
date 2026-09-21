@@ -1,0 +1,89 @@
+# Wiki.js with OpenID Connect sign-in and group mapping, and nothing else.
+#
+# This is the shape most people want: single sign-on, groups from the identity
+# provider, no content seeding. Copy the directory, change the five values that
+# are genuinely yours, and deploy.
+#
+#   cp -r environments/example-sso environments/prod
+#   $EDITOR environments/prod/wikijs.yaml
+#   ./scripts/deploy.sh prod wikijs
+#
+# Nothing has to be clicked afterwards. The install creates the Wiki.js groups
+# named below, gives the one mapped to `admin` the manage:system permission, and
+# enables the OIDC strategy. The first person to sign in from the admin group
+# lands with full administrator rights.
+
+ingress:
+  host: wiki.example.com              # REQUIRED
+  className: nginx
+  clusterIssuer: letsencrypt-prod     # "" serves plain HTTP instead
+  annotations: {}
+
+postgres:
+  instances: 1
+  storage:
+    size: 10Gi
+    storageClass: ""                  # "" = the cluster's default StorageClass
+
+# ── Single sign-on ──────────────────────────────────────────────────────────
+sso:
+  enabled: true
+
+  # Issuer base URL. The authorize / token / userinfo / logout endpoints are
+  # derived from it as <issuer>/protocol/openid-connect/<endpoint>.
+  issuer: https://idp.example.com/realms/main
+
+  displayName: Company SSO
+
+  # Also the path segment of the redirect URI, which is
+  #   https://<ingress.host>/login/<strategyKey>/callback
+  # Register exactly that on the identity provider's client. The two cannot
+  # differ: Wiki.js builds the callback from this value.
+  strategyKey: sso
+
+  # The claim carrying group names. On Keycloak this is a group-membership
+  # mapper with `full path` OFF. It must be written to the UserInfo response,
+  # not only to the ID token -- Wiki.js reads UserInfo, so a mapper set to
+  # ID-token-only leaves group mapping silently doing nothing.
+  groupsClaim: groups
+
+  # Your identity provider's group names, exactly as they appear in the claim,
+  # mapped onto a tier. See charts/wikijs/values.yaml for what each tier grants.
+  groupMap:
+    GRP_Wiki_Admins: admin
+    GRP_Wiki_Users: editor
+    GRP_Wiki_Readers: viewer
+
+  # Wiki.js groups to delete before mapping.
+  #
+  # Read this even if you think you do not need it. Wiki.js checks the claim
+  # against EVERY Wiki.js group, not only the ones named above, so a group whose
+  # name matches something every account carries grants its permissions to
+  # everyone who signs in. Name such a group here and the install removes it.
+  retiredGroups: []
+  #   - domain-users
+
+seed:
+  enabled: false
+
+# ── Where the install reads credentials ─────────────────────────────────────
+# With sso on and seed off, four fields are needed: admin_email, admin_password,
+# oidc_client_id, oidc_client_secret. Nothing else is requested.
+#
+# admin_email / admin_password are the LOCAL administrator the setup wizard
+# creates. Keep them: they are the break-glass account for when the identity
+# provider is unavailable, and they are what the install itself authenticates
+# as to assign manage:system.
+credentials:
+  mode: externalSecret                # externalSecret | existing
+  externalSecret:
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: my-secret-store
+    remoteKey: apps/wikijs/runtime
+
+# With no secret manager, create the Secret yourself and use:
+#
+# credentials:
+#   mode: existing
+#   existingSecret: wikijs-credentials
