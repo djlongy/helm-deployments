@@ -69,6 +69,15 @@ Set it to `https://<your wiki host>/login/<key>/callback`, where `<key>` is the
 strategy key you will type in Part 2. Wiki.js builds the callback from that key,
 so the two cannot differ.
 
+**6. A sentinel role, so revocation works.**
+Create a second client role named something that matches **no** Wiki.js group —
+`wiki-authenticated` — and add it under Realm settings → User registration →
+Default roles so every account carries it.
+
+Skip this and removing someone from their last wiki group leaves their access
+intact for ever. The reason is in *Three things that will confuse you later*,
+item 1. It is one role and it is not optional.
+
 ### Check it before touching Wiki.js
 
 Sign in as a member and read the UserInfo document. The claim must say:
@@ -147,10 +156,49 @@ every other check **and every page rule**, so an admin group cannot be narrowed.
 
 ## Three things that will confuse you later
 
-**1. Group mapping is not additive.** On each sign-in it adds the groups in the
-claim and **removes every group that is not**. Assignments you make by hand in the
-Wiki.js UI survive until that user's next login, then vanish. The directory owns
-membership. This is by design, and it is usually the thing people report as a bug.
+**1. Group mapping is not additive — except when it silently is.** On each sign-in
+it adds the groups in the claim and **removes every group that is not**.
+Assignments you make by hand in the Wiki.js UI survive until that user's next
+login, then vanish. The directory owns membership.
+
+**But removal stops working when the claim goes empty**, and that is a
+deprovisioning hole rather than an inconvenience. The module guards the whole
+reconcile:
+
+```js
+const groups = _.get(profile, '_json.' + conf.groupsClaim)
+if (groups && _.isArray(groups)) {
+  // add missing, remove extra
+}
+```
+
+Keycloak omits a multivalued claim entirely when it has no values. So taking
+someone out of their **last** mapped group produces a UserInfo document with no
+`groups` key at all, the guard fails, and the reconcile never runs — including the
+half that removes. Their existing Wiki.js groups survive untouched, through every
+later login.
+
+If administrator comes from one group, as it does above, this is the whole
+problem: remove the last group and the person stays an administrator.
+
+**Fix it with a sentinel role**, so the claim is never empty:
+
+1. On the wiki client, create a role whose name matches **no** Wiki.js group —
+   `wiki-authenticated` does.
+2. Realm settings → User registration → Default roles → add that client role, so
+   every account carries it.
+3. Do **not** create a Wiki.js group of that name. It grants nothing. It exists
+   only to keep the array non-empty.
+
+Removal then works: the claim reads `["wiki-authenticated"]`, the guard passes,
+the reconcile runs, and the admin group is stripped on next login.
+
+Prefer a floor of read access to a pure sentinel? Use a real `Wiki Readers` role
+the same way and create that group in Wiki.js. Same effect on the claim.
+
+Check it the way it was found: remove the role, read UserInfo, and confirm
+`groups` is **present** rather than absent. A membership listing looks correct
+either way — only the removal path shows the difference.
 
 **2. The claim is matched against every group, not just the ones you meant.** A
 Wiki.js group named after something everyone carries — `domain-users`, say —
